@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard de Reembolsos</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0f14;
+    --surface: #161a22;
+    --surface2: #1d2330;
+    --border: rgba(255,255,255,0.07);
+    --border2: rgba(255,255,255,0.13);
+    --text: #e8eaf0;
+    --muted: #6b7280;
+    --accent: #4f8ef7;
+    --accent2: #7c3aed;
+    --green: #10b981;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --teal: #14b8a6;
+    --mono: 'DM Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  #upload-screen {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 2rem;
+    padding: 2rem;
+  }
+
+  .upload-logo { font-family: var(--mono); font-size: 11px; letter-spacing: 0.15em; color: var(--muted); text-transform: uppercase; margin-bottom: 0.5rem; }
+  .upload-title { font-size: 2rem; font-weight: 300; letter-spacing: -0.02em; text-align: center; }
+  .upload-title span { color: var(--accent); }
+
+  .upload-zone {
+    width: 100%; max-width: 480px;
+    border: 1px dashed var(--border2);
+    border-radius: 16px;
+    padding: 3rem 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--surface);
+    position: relative;
+  }
+  .upload-zone:hover, .upload-zone.drag { border-color: var(--accent); background: rgba(79,142,247,0.05); }
+  .upload-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+  .upload-icon { width: 48px; height: 48px; background: rgba(79,142,247,0.1); border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.25rem; font-size: 22px; }
+  .upload-hint { color: var(--muted); font-size: 13px; margin-top: 0.5rem; }
+
+  .col-map { width: 100%; max-width: 480px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; display: none; }
+  .col-map h3 { font-size: 13px; font-weight: 500; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 1rem; }
+  .map-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; align-items: center; }
+  .map-label { font-size: 13px; color: var(--text); }
+
+  .map-select {
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 13px;
+    font-family: var(--sans);
+    width: 100%;
+    cursor: pointer;
+  }
+
+  .btn-load { margin-top: 1rem; width: 100%; padding: 12px; background: var(--accent); color: #fff; border: none; border-radius: 10px; font-family: var(--sans); font-size: 14px; font-weight: 500; cursor: pointer; transition: opacity 0.2s; }
+  .btn-load:hover { opacity: 0.85; }
+
+  #dashboard { display: none; }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(13,15,20,0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 0.75rem 2rem;
+    display: flex; align-items: center; gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .topbar-brand { font-family: var(--mono); font-size: 12px; letter-spacing: 0.1em; color: var(--accent); text-transform: uppercase; margin-right: auto; white-space: nowrap; }
+  .filter-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .filter-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; }
+  .filter-select, .filter-input { background: var(--surface2); border: 1px solid var(--border2); color: var(--text); border-radius: 8px; padding: 6px 10px; font-size: 13px; font-family: var(--sans); cursor: pointer; min-width: 110px; }
+  .filter-input { min-width: 120px; }
+  .filter-sep { width: 1px; height: 28px; background: var(--border2); }
+  .btn-reload { background: var(--surface2); border: 1px solid var(--border2); color: var(--muted); border-radius: 8px; padding: 6px 12px; font-size: 12px; font-family: var(--sans); cursor: pointer; transition: color 0.2s; }
+  .btn-reload:hover { color: var(--text); }
+
+  .main { padding: 1.5rem 2rem 3rem; max-width: 1400px; margin: 0 auto; }
+
+  /* 5 colunas para os KPIs */
+  .metrics-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 1.5rem; }
+
+  .metric-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1.1rem 1.25rem; position: relative; overflow: hidden; }
+  .metric-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--card-accent, var(--accent)); }
+  .metric-card .m-label { font-size: 11px; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 8px; }
+  .metric-card .m-value { font-size: 22px; font-weight: 300; letter-spacing: -0.02em; line-height: 1; margin-bottom: 4px; }
+  .metric-card .m-sub { font-size: 12px; color: var(--muted); }
+  .metric-card .m-value.green  { color: var(--green); }
+  .metric-card .m-value.amber  { color: var(--amber); }
+  .metric-card .m-value.red    { color: var(--red); }
+  .metric-card .m-value.blue   { color: var(--accent); }
+  .metric-card .m-value.purple { color: #a78bfa; }
+
+  .charts-row { display: grid; gap: 12px; margin-bottom: 12px; }
+  .charts-row.cols2 { grid-template-columns: 1fr 1fr; }
+  .charts-row.cols3 { grid-template-columns: 1fr 1fr 1fr; }
+
+  .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1.25rem; }
+  .chart-card.span2 { grid-column: span 2; }
+
+  .chart-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 1rem; }
+  .chart-title { font-size: 13px; font-weight: 500; color: var(--text); }
+  .chart-sub { font-size: 11px; color: var(--muted); }
+  .chart-wrap { position: relative; }
+
+  .funnel { display: flex; flex-direction: column; gap: 8px; }
+  .funnel-row { display: flex; align-items: center; gap: 10px; }
+  .funnel-label { font-size: 12px; color: var(--muted); min-width: 130px; text-align: right; }
+  .funnel-track { flex: 1; height: 28px; background: var(--surface2); border-radius: 6px; overflow: hidden; }
+  .funnel-fill { height: 100%; display: flex; align-items: center; padding: 0 10px; border-radius: 6px; transition: width 0.8s cubic-bezier(.4,0,.2,1); }
+  .funnel-fill span { font-size: 12px; font-weight: 500; color: #fff; white-space: nowrap; }
+  .funnel-pct { font-family: var(--mono); font-size: 11px; color: var(--muted); min-width: 36px; text-align: right; }
+
+  .pending-table { width: 100%; border-collapse: collapse; }
+  .pending-table th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); padding: 8px 12px; border-bottom: 1px solid var(--border); text-align: left; font-weight: 500; }
+  .pending-table td { font-size: 13px; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .pending-table tr:last-child td { border-bottom: none; }
+  .pending-table tr:hover td { background: var(--surface2); }
+
+  .prog-bar-wrap { display: flex; align-items: center; gap: 8px; }
+  .prog-bar { flex: 1; height: 6px; background: var(--surface2); border-radius: 99px; overflow: hidden; }
+  .prog-bar-fill { height: 100%; border-radius: 99px; }
+  .prog-pct { font-family: var(--mono); font-size: 12px; min-width: 38px; text-align: right; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 500; }
+  .badge-red   { background: rgba(239,68,68,0.15);  color: #f87171; }
+  .badge-amber { background: rgba(245,158,11,0.15); color: #fbbf24; }
+  .badge-green { background: rgba(16,185,129,0.15); color: #34d399; }
+
+  .scroll-table { overflow-x: auto; max-height: 300px; overflow-y: auto; }
+  .scroll-table::-webkit-scrollbar { width: 4px; }
+  .scroll-table::-webkit-scrollbar-track { background: transparent; }
+  .scroll-table::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 99px; }
+
+  .section-title { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 1.5rem 0 0.75rem; }
+  .empty { text-align: center; padding: 3rem 1rem; color: var(--muted); font-size: 13px; }
+
+  @media (max-width: 1100px) { .metrics-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 900px) {
+    .metrics-grid { grid-template-columns: 1fr 1fr; }
+    .charts-row.cols2 { grid-template-columns: 1fr; }
+    .charts-row.cols3 { grid-template-columns: 1fr; }
+    .chart-card.span2 { grid-column: span 1; }
+    .topbar { padding: 0.75rem 1rem; }
+    .main { padding: 1rem 1rem 2rem; }
+    .funnel-label { min-width: 90px; font-size: 11px; }
+  }
+  @media (max-width: 600px) { .metrics-grid { grid-template-columns: 1fr 1fr; gap: 8px; } }
+</style>
+</head>
+<body>
+
+<div id="upload-screen">
+  <div>
+    <div class="upload-logo">Sistema de Gestão</div>
+    <h1 class="upload-title">Dashboard de <span>Reembolsos</span></h1>
+  </div>
+
+  <div style="display:flex;gap:0;border:1px solid var(--border2);border-radius:10px;overflow:hidden;width:100%;max-width:480px;">
+    <button id="tab-xlsx" onclick="switchTab('xlsx')" style="flex:1;padding:10px;background:var(--surface2);border:none;color:var(--text);font-family:var(--sans);font-size:13px;font-weight:500;cursor:pointer;border-right:1px solid var(--border2);">📄 Arquivo XLSX</button>
+    <button id="tab-gsheets" onclick="switchTab('gsheets')" style="flex:1;padding:10px;background:var(--surface);border:none;color:var(--muted);font-family:var(--sans);font-size:13px;font-weight:500;cursor:pointer;">🔗 Google Sheets</button>
+  </div>
+
+  <div id="panel-xlsx" style="width:100%;max-width:480px;">
+    <div class="upload-zone" id="drop-zone">
+      <input type="file" id="file-input" accept=".xlsx,.xls">
+      <div class="upload-icon">📊</div>
+      <div style="font-weight:500;margin-bottom:4px;">Arraste sua planilha aqui</div>
+      <div class="upload-hint">ou clique para selecionar um arquivo .xlsx</div>
+    </div>
+  </div>
+
+  <div id="panel-gsheets" style="width:100%;max-width:480px;display:none;">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:1.5rem;display:flex;flex-direction:column;gap:12px;">
+      <div>
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">URL da planilha</div>
+        <input id="gs-url" class="map-select" placeholder="https://docs.google.com/spreadsheets/d/..." style="width:100%;padding:10px 12px;font-size:13px;border-radius:8px;">
+        <div style="font-size:11px;color:var(--muted);margin-top:5px;">Cole o link de compartilhamento da planilha</div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Chave de API do Google *</div>
+        <input id="gs-apikey" class="map-select" type="password" placeholder="AIza..." style="width:100%;padding:10px 12px;font-size:13px;border-radius:8px;">
+        <div style="font-size:11px;color:var(--muted);margin-top:5px;">Obtenha em <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:var(--accent)">console.cloud.google.com</a> → Ative a Google Sheets API e crie uma chave.</div>
+      </div>
+      <div id="gs-error" style="display:none;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:10px 12px;font-size:12px;color:#f87171;"></div>
+      <button class="btn-load" id="btn-gs-load" style="margin-top:0;">Conectar ao Google Sheets →</button>
+    </div>
+    <div style="margin-top:12px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem 1.25rem;">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Como configurar</div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <div style="font-size:12px;color:var(--text);display:flex;gap:8px;"><span style="color:var(--accent);min-width:18px;">1.</span>Na planilha: Compartilhar → Qualquer pessoa com o link → Leitor</div>
+        <div style="font-size:12px;color:var(--text);display:flex;gap:8px;"><span style="color:var(--accent);min-width:18px;">2.</span>Crie uma chave de API no Google Cloud Console</div>
+        <div style="font-size:12px;color:var(--text);display:flex;gap:8px;"><span style="color:var(--accent);min-width:18px;">3.</span>Ative a <strong>Google Sheets API</strong> no projeto</div>
+        <div style="font-size:12px;color:var(--text);display:flex;gap:8px;"><span style="color:var(--accent);min-width:18px;">4.</span>Os dados serão lidos da aba <strong style="color:var(--accent)">DadosAuxiliar</strong> automaticamente</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-map" id="col-map">
+    <h3>Mapeamento de colunas</h3>
+    <div id="map-rows"></div>
+    <button class="btn-load" id="btn-load">Carregar Dashboard →</button>
+  </div>
+</div>
+
+<div id="dashboard">
+  <div class="topbar">
+    <div class="topbar-brand">⬡ Reembolsos</div>
+    <div class="filter-group">
+      <span class="filter-label">Período</span>
+      <select class="filter-select" id="f-ano"><option value="">Todos os anos</option></select>
+      <select class="filter-select" id="f-mes"><option value="">Todos os meses</option></select>
+      <input type="date" class="filter-input" id="f-dia" title="Filtrar por dia específico">
+    </div>
+    <div class="filter-sep"></div>
+    <div class="filter-group">
+      <span class="filter-label">Por</span>
+      <select class="filter-select" id="f-func"><option value="">Todos os funcionários</option></select>
+      <select class="filter-select" id="f-unidade"><option value="">Todas as capelas</option></select>
+    </div>
+    <div class="filter-sep"></div>
+    <button class="btn-reload" id="btn-reload">↑ Trocar fonte de dados</button>
+  </div>
+
+  <div class="main">
+    <div class="metrics-grid" id="metrics-grid"></div>
+
+    <p class="section-title">Pipeline de reembolso</p>
+    <div class="charts-row cols2">
+      <div class="chart-card">
+        <div class="chart-header">
+          <span class="chart-title">Funil: compra → reembolso</span>
+          <span class="chart-sub" id="funil-total"></span>
+        </div>
+        <div class="funnel" id="funnel-chart"></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-header"><span class="chart-title">Gasto mensal × Enviado</span></div>
+        <div class="chart-wrap" style="height:200px;">
+          <canvas id="chart-temporal" role="img" aria-label="Gráfico de barras de gastos mensais versus valores enviados para reembolso">Gráfico de evolução mensal</canvas>
+        </div>
+      </div>
+    </div>
+
+    <p class="section-title">Gastos por unidade e funcionário</p>
+    <div class="charts-row cols2">
+      <div class="chart-card">
+        <div class="chart-header"><span class="chart-title">Valor gasto por capela</span></div>
+        <div class="chart-wrap" style="height:220px;">
+          <canvas id="chart-unidade" role="img" aria-label="Gráfico de barras horizontais de valor gasto por unidade">Gastos por unidade</canvas>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-header"><span class="chart-title">Valor gasto por funcionário</span></div>
+        <div class="chart-wrap" style="height:220px;">
+          <canvas id="chart-func" role="img" aria-label="Gráfico de barras horizontais de valor gasto por funcionário">Gastos por funcionário</canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="charts-row cols2" style="margin-top:0;">
+      <div class="chart-card span2">
+        <div class="chart-header" style="align-items: center;">
+          <div style="display: flex; flex-direction: column;">
+            <span class="chart-title">Compras sem relatório por funcionário</span>
+            <span class="chart-sub">Quantidade e valor de serviços sem relatório gerado</span>
+          </div>
+          <select id="f-semrel-metric" class="filter-select" style="min-width:auto; padding: 4px 8px; font-size: 11px;">
+            <option value="qtd">Por Quantidade</option>
+            <option value="valor">Por Valor Devido (R$)</option>
+          </select>
+        </div>
+        <div class="chart-wrap" id="chart-semrel-wrap" style="height:200px;">
+          <canvas id="chart-semrel-func" role="img" aria-label="Gráfico de barras de quantidade de compras sem relatório por funcionário">Compras sem relatório por funcionário</canvas>
+        </div>
+      </div>
+    </div>
+
+    <p class="section-title">Pendências por funcionário</p>
+    <div class="charts-row cols2">
+      <div class="chart-card span2">
+        <div class="chart-header">
+          <span class="chart-title">% de relatórios pendentes por funcionário</span>
+          <span class="chart-sub">Relatório não feito ÷ total de compras do funcionário</span>
+        </div>
+        <div class="scroll-table">
+          <table class="pending-table">
+            <thead>
+              <tr>
+                <th>Funcionário</th>
+                <th>Total compras</th>
+                <th>Sem relatório</th>
+                <th>Prontos, não enviados</th>
+                <th>Enviados</th>
+                <th>% Pendente (relatório)</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="pending-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <p class="section-title">Alertas e compras pendentes</p>
+    <div class="charts-row cols2">
+      <div class="chart-card">
+        <div class="chart-header"><span class="chart-title">Prontos, não enviados</span></div>
+        <div class="scroll-table" style="max-height:260px;">
+          <table class="pending-table">
+            <thead><tr><th>SA</th><th>Itens</th><th>Data</th><th>Funcionário</th><th>Unidade</th><th>Valor</th></tr></thead>
+            <tbody id="tbody-prontos"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-header"><span class="chart-title">Serviços extra (sem reembolso)</span></div>
+        <div class="scroll-table" style="max-height:260px;">
+          <table class="pending-table">
+            <thead><tr><th>SA</th><th>Itens</th><th>Data</th><th>Funcionário</th><th>Unidade</th><th>Valor</th></tr></thead>
+            <tbody id="tbody-extra"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="charts-row" style="margin-top:0;">
+      <div class="chart-card">
+        <div class="chart-header"><span class="chart-title">Sem relatório ainda</span></div>
+        <div class="scroll-table" style="max-height:260px;">
+          <table class="pending-table">
+            <thead><tr><th>SA</th><th>Itens</th><th>Data</th><th>Funcionário</th><th>Unidade</th><th>Valor</th></tr></thead>
+            <tbody id="tbody-semrel"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let rawData = [];
+let colMap = {};
+const FIELDS = [
+  { key: 'valor',       label: 'Valor ($)',            required: true },
+  { key: 'itens',       label: 'Itens',                required: false },
+  { key: 'data',        label: 'Data',                 required: true },
+  { key: 'unidade',     label: 'Unidade (Capela)',     required: true },
+  { key: 'sa',          label: 'SA (Nº Serviço)',      required: false },
+  { key: 'funcionario', label: 'Funcionário',          required: true },
+  { key: 'relatorio',   label: 'Relatório (checkbox)', required: true },
+  { key: 'enviado',     label: 'Enviado (checkbox)',   required: true },
+  { key: 'extra',       label: 'EXTRA',                required: true },
+];
+let charts = {};
+
+function switchTab(tab) {
+  const isXlsx = tab === 'xlsx';
+  document.getElementById('panel-xlsx').style.display    = isXlsx ? 'block' : 'none';
+  document.getElementById('panel-gsheets').style.display = isXlsx ? 'none'  : 'block';
+  document.getElementById('col-map').style.display = 'none';
+  document.getElementById('tab-xlsx').style.background    = isXlsx ? 'var(--surface2)' : 'var(--surface)';
+  document.getElementById('tab-xlsx').style.color         = isXlsx ? 'var(--text)'     : 'var(--muted)';
+  document.getElementById('tab-gsheets').style.background = isXlsx ? 'var(--surface)'  : 'var(--surface2)';
+  document.getElementById('tab-gsheets').style.color      = isXlsx ? 'var(--muted)'    : 'var(--text)';
+}
+
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('drag'); handleFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change', () => handleFile(fileInput.files[0]));
+
+function handleFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+    
+    // Verifica se a aba "DadosAuxiliar" existe no arquivo
+    if (!wb.SheetNames.includes('DadosAuxiliar')) {
+      alert('Erro: O arquivo XLSX deve conter uma aba chamada "DadosAuxiliar".');
+      fileInput.value = ''; // Limpa o arquivo selecionado
+      return;
+    }
+    
+    // Busca os dados especificamente da aba "DadosAuxiliar"
+    const ws = wb.Sheets['DadosAuxiliar'];
+    rawData = XLSX.utils.sheet_to_json(ws, { defval: '' });
+    showColumnMapper(rawData);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+document.getElementById('btn-gs-load').addEventListener('click', async () => {
+  const url    = document.getElementById('gs-url').value.trim();
+  const apiKey = document.getElementById('gs-apikey').value.trim();
+  const btn    = document.getElementById('btn-gs-load');
+  document.getElementById('gs-error').style.display = 'none';
+
+  if (!url || !apiKey) { showGsError('Preencha a URL da planilha e a chave de API.'); return; }
+  const spreadsheetId = extractSheetId(url);
+  if (!spreadsheetId) { showGsError('URL inválida. Use o link de compartilhamento do Google Sheets.'); return; }
+
+  btn.textContent = 'Carregando...'; btn.style.opacity = '0.6'; btn.disabled = true;
+  try {
+    const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent('DadosAuxiliar')}?key=${apiKey}`;
+    const res = await fetch(apiUrl);
+    const data = await res.json();
+    if (data.error) { showGsError(`Erro da API Google: ${data.error.message}`); return; }
+    if (!data.values || data.values.length < 2) { showGsError('Aba "DadosAuxiliar" está vazia ou não encontrada.'); return; }
+    const headers = data.values[0];
+    rawData = data.values.slice(1).map(row => {
+      const obj = {};
+      headers.forEach((h, i) => { obj[h] = row[i] !== undefined ? row[i] : ''; });
+      return obj;
+    });
+    showColumnMapper(rawData);
+  } catch (err) {
+    showGsError('Falha na conexão. Verifique a URL, a chave de API e se a Sheets API está ativa no projeto.');
+  } finally {
+    btn.textContent = 'Conectar ao Google Sheets →'; btn.style.opacity = '1'; btn.disabled = false;
+  }
+});
+
+function extractSheetId(url) { const m = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/); return m ? m[1] : null; }
+function showGsError(msg) { const el = document.getElementById('gs-error'); el.textContent = msg; el.style.display = 'block'; }
+
+function showColumnMapper(json) {
+  if (!json.length) return;
+  const cols = Object.keys(json[0]);
+  const rowsEl = document.getElementById('map-rows');
+  rowsEl.innerHTML = '';
+  FIELDS.forEach(f => {
+    const row = document.createElement('div'); row.className = 'map-row';
+    const lbl = document.createElement('div'); lbl.className = 'map-label'; lbl.textContent = f.label + (f.required ? ' *' : '');
+    const sel = document.createElement('select'); sel.className = 'map-select'; sel.dataset.field = f.key;
+    sel.innerHTML = `<option value="">— Selecionar —</option>` + cols.map(c => `<option value="${c}" ${autoMatch(c, f.key) ? 'selected' : ''}>${c}</option>`).join('');
+    row.appendChild(lbl); row.appendChild(sel); rowsEl.appendChild(row);
+  });
+  document.getElementById('col-map').style.display = 'block';
+}
+
+function autoMatch(col, key) {
+  const c = col.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const map = {
+    valor:       ['valor','$','preco','price','amount'],
+    itens:       ['item','descricao','produto','servico','itens'],
+    data:        ['data','date','dt'],
+    unidade:     ['unidade','unid','capela','local'],
+    sa:          ['sa','num','numero','os'],
+    funcionario: ['funcionario','func','nome','colaborador','pessoa','employee'],
+    relatorio:   ['relatorio','rel','report'],
+    enviado:     ['enviado','send','envio','sent'],
+    extra:       ['extra','adicional','add'],
+  };
+  return (map[key] || []).some(k => c.includes(k));
+}
+
+document.getElementById('btn-load').addEventListener('click', () => {
+  colMap = {};
+  document.querySelectorAll('.map-select').forEach(s => { if (s.value) colMap[s.dataset.field] = s.value; });
+  const missing = FIELDS.filter(f => f.required && !colMap[f.key]).map(f => f.label);
+  if (missing.length) { alert('Mapeie os campos obrigatórios:\n' + missing.join('\n')); return; }
+  initDashboard();
+});
+
+document.getElementById('btn-reload').addEventListener('click', () => {
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('upload-screen').style.display = 'flex';
+  document.getElementById('col-map').style.display = 'none';
+  document.getElementById('gs-error').style.display = 'none';
+  fileInput.value = '';
+  switchTab('xlsx');
+});
+
+function get(row, key) { return colMap[key] ? row[colMap[key]] : ''; }
+
+function toBool(v) {
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'number') return v === 1;
+  if (typeof v === 'string') { const s = v.trim().toLowerCase(); return s === 'true' || s === 'sim' || s === '1' || s === 'x' || s === 'yes' || s === 'verdadeiro'; }
+  return false;
+}
+
+function toNum(v) {
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string') return parseFloat(v.replace(/[^0-9,.-]/g, '').replace(',', '.')) || 0;
+  return 0;
+}
+
+function toDate(v) {
+  if (!v) return null;
+  if (v instanceof Date) return isNaN(v) ? null : v;
+  if (typeof v === 'number') { const d = new Date(Math.round((v - 25569) * 86400 * 1000)); return isNaN(d) ? null : d; }
+  if (typeof v === 'string') {
+    const brMatch = v.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (brMatch) {
+      const [, d, m, y] = brMatch;
+      const year = y.length === 2 ? '20' + y : y;
+      const date = new Date(`${year}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`);
+      return isNaN(date) ? null : date;
+    }
+    const d = new Date(v); return isNaN(d) ? null : d;
+  }
+  return null;
+}
+
+function fmtBRL(n) { return 'R$ ' + (n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function fmtMes(n) { return ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][n - 1] || n; }
+function fmtData(d) { if (!d) return '—'; return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }); }
+
+function normalizeName(str) {
+  if (!str) return '';
+  return str.toString().trim().toLowerCase().split(' ').map(w => w.length > 0 ? w[0].toUpperCase() + w.slice(1) : '').join(' ');
+}
+
+function initDashboard() {
+  document.getElementById('upload-screen').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+  rawData.forEach(r => {
+    r._valor   = toNum(get(r, 'valor'));
+    r._data    = toDate(get(r, 'data'));
+    r._unidade = normalizeName(get(r, 'unidade'));
+    r._func    = normalizeName(get(r, 'funcionario'));
+    r._itens   = (get(r, 'itens') || '').toString().trim();
+    r._sa      = (get(r, 'sa') || '').toString().trim();
+    r._rel     = toBool(get(r, 'relatorio'));
+    r._env     = toBool(get(r, 'enviado'));
+    r._extra   = toBool(get(r, 'extra'));
+    r._ano     = r._data ? r._data.getFullYear() : null;
+    r._mes     = r._data ? r._data.getMonth() + 1 : null;
+    r._diaStr  = r._data ? r._data.toISOString().slice(0, 10) : null;
+  });
+  populateFilters();
+  bindFilters();
+  render();
+}
+
+function populateFilters() {
+  const anos  = [...new Set(rawData.map(r => r._ano).filter(Boolean))].sort();
+  const funcs = [...new Set(rawData.map(r => r._func).filter(Boolean))].sort();
+  const unids = [...new Set(rawData.map(r => r._unidade).filter(Boolean))].sort();
+  document.getElementById('f-ano').innerHTML    = '<option value="">Todos os anos</option>'        + anos.map(a => `<option>${a}</option>`).join('');
+  document.getElementById('f-mes').innerHTML    = '<option value="">Todos os meses</option>'       + [...Array(12)].map((_,i) => `<option value="${i+1}">${fmtMes(i+1)}</option>`).join('');
+  document.getElementById('f-func').innerHTML   = '<option value="">Todos os funcionários</option>' + funcs.map(f => `<option value="${f}">${f}</option>`).join('');
+  document.getElementById('f-unidade').innerHTML = '<option value="">Todas as capelas</option>'     + unids.map(u => `<option value="${u}">${u}</option>`).join('');
+}
+
+function bindFilters() {
+  ['f-ano','f-mes','f-dia','f-func','f-unidade'].forEach(id => document.getElementById(id).addEventListener('change', render));
+  document.getElementById('f-semrel-metric').addEventListener('change', () => renderSemRelFunc(getFiltered()));
+}
+
+function getFiltered() {
+  const ano  = document.getElementById('f-ano').value;
+  const mes  = document.getElementById('f-mes').value;
+  const dia  = document.getElementById('f-dia').value;
+  const func = document.getElementById('f-func').value;
+  const unid = document.getElementById('f-unidade').value;
+  return rawData.filter(r => {
+    if (ano  && r._ano !== parseInt(ano)) return false;
+    if (mes  && r._mes !== parseInt(mes)) return false;
+    if (dia  && r._diaStr !== dia)        return false;
+    if (func && r._func !== func)         return false;
+    if (unid && r._unidade !== unid)      return false;
+    return true;
+  });
+}
+
+function render() {
+  const data = getFiltered();
+  renderMetrics(data);
+  renderFunnel(data);
+  renderTemporal(data);
+  renderUnidade(data);
+  renderFuncionario(data);
+  renderSemRelFunc(data);
+  renderPendingTable(data);
+  renderAlertTables(data);
+}
+
+// ── METRICS: 5 cards ──────────────────────────────────────────────────────────
+function renderMetrics(data) {
+  const total      = data.reduce((s, r) => s + r._valor, 0);
+  const enviado    = data.filter(r => r._env && !r._extra).reduce((s, r) => s + r._valor, 0);
+  const aguardando = data.filter(r => r._rel && !r._env && !r._extra).reduce((s, r) => s + r._valor, 0);
+  const semRel     = data.filter(r => !r._rel && !r._extra).reduce((s, r) => s + r._valor, 0);
+  const extra      = data.filter(r => r._extra).reduce((s, r) => s + r._valor, 0);
+  const pctEnv     = total > 0 ? (enviado / total * 100).toFixed(1) : '0.0';
+  const qtdSemRel  = data.filter(r => !r._rel && !r._extra).length;
+  const qtdExtra   = data.filter(r => r._extra).length;
+
+  document.getElementById('metrics-grid').innerHTML = `
+    <div class="metric-card" style="--card-accent:var(--accent)">
+      <div class="m-label">Total gasto</div>
+      <div class="m-value blue">${fmtBRL(total)}</div>
+      <div class="m-sub">${data.length} registros</div>
+    </div>
+    <div class="metric-card" style="--card-accent:var(--green)">
+      <div class="m-label">Enviado p/ reembolso</div>
+      <div class="m-value green">${fmtBRL(enviado)}</div>
+      <div class="m-sub">${pctEnv}% do total</div>
+    </div>
+    <div class="metric-card" style="--card-accent:var(--amber)">
+      <div class="m-label">Aguardando envio</div>
+      <div class="m-value amber">${fmtBRL(aguardando)}</div>
+      <div class="m-sub">Relatório pronto</div>
+    </div>
+    <div class="metric-card" style="--card-accent:#a78bfa">
+      <div class="m-label">Sem relatório</div>
+      <div class="m-value purple">${fmtBRL(semRel)}</div>
+      <div class="m-sub">${qtdSemRel} compra${qtdSemRel !== 1 ? 's' : ''} pendente${qtdSemRel !== 1 ? 's' : ''}</div>
+    </div>
+    <div class="metric-card" style="--card-accent:var(--red)">
+      <div class="m-label">Serviço extra (sem reimb.)</div>
+      <div class="m-value red">${fmtBRL(extra)}</div>
+      <div class="m-sub">${qtdExtra} compra${qtdExtra !== 1 ? 's' : ''} para extra</div>
+    </div>
+  `;
+}
+
+function renderFunnel(data) {
+  const total    = data.length;
+  const comRel   = data.filter(r => r._rel).length;
+  const enviados = data.filter(r => r._env && !r._extra).length;
+  const extras   = data.filter(r => r._extra).length;
+  document.getElementById('funil-total').textContent = total + ' Compras no período';
+  const steps = [
+    { label: 'Total de Compras',   n: total,    pct: 100,                             color: '#378add' },
+    { label: 'Relatório feito',    n: comRel,   pct: total ? comRel/total*100 : 0,   color: '#4f8ef7' },
+    { label: 'Enviados',           n: enviados, pct: total ? enviados/total*100 : 0, color: '#10b981' },
+    { label: 'EXTRA (sem reimb.)', n: extras,   pct: total ? extras/total*100 : 0,   color: '#ef4444' },
+  ];
+  document.getElementById('funnel-chart').innerHTML = steps.map(s => `
+    <div class="funnel-row">
+      <span class="funnel-label">${s.label}</span>
+      <div class="funnel-track"><div class="funnel-fill" style="width:${s.pct}%;background:${s.color}"><span>${s.n}</span></div></div>
+      <span class="funnel-pct">${s.pct.toFixed(0)}%</span>
+    </div>`).join('');
+}
+
+function renderTemporal(data) {
+  const byMes = {};
+  data.forEach(r => {
+    if (!r._mes || !r._ano) return;
+    const key = `${r._ano}-${String(r._mes).padStart(2,'0')}`;
+    if (!byMes[key]) byMes[key] = { gasto: 0, enviado: 0 };
+    byMes[key].gasto += r._valor;
+    if (r._env && !r._extra) byMes[key].enviado += r._valor;
+  });
+  const keys   = Object.keys(byMes).sort();
+  const labels = keys.map(k => { const [y,m] = k.split('-'); return fmtMes(parseInt(m)) + '/' + y.slice(2); });
+  if (charts.temporal) charts.temporal.destroy();
+  charts.temporal = new Chart(document.getElementById('chart-temporal'), {
+    type: 'bar',
+    data: { labels, datasets: [
+      { label: 'Gasto total',       data: keys.map(k => +byMes[k].gasto.toFixed(2)),   backgroundColor: 'rgba(79,142,247,0.7)', borderRadius: 4 },
+      { label: 'Enviado p/ reimb.', data: keys.map(k => +byMes[k].enviado.toFixed(2)), backgroundColor: 'rgba(16,185,129,0.7)', borderRadius: 4 },
+    ]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#6b7280', font: { size: 11 }, autoSkip: false, maxRotation: 45 }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        y: { ticks: { color: '#6b7280', font: { size: 11 }, callback: v => 'R$' + (v/1000).toFixed(0) + 'k' }, grid: { color: 'rgba(255,255,255,0.04)' } }
+      }
+    }
+  });
+}
+
+function renderUnidade(data) {
+  const map = {};
+  data.forEach(r => { if (r._unidade) map[r._unidade] = (map[r._unidade] || 0) + r._valor; });
+  const sorted = Object.entries(map).sort((a,b) => b[1]-a[1]).slice(0, 10);
+  if (charts.unidade) charts.unidade.destroy();
+  if (!sorted.length) return;
+  charts.unidade = new Chart(document.getElementById('chart-unidade'), {
+    type: 'bar',
+    data: { labels: sorted.map(s => s[0]), datasets: [{ data: sorted.map(s => +s[1].toFixed(2)), backgroundColor: 'rgba(79,142,247,0.7)', borderRadius: 4 }] },
+    options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+      scales: { x: { ticks: { color: '#6b7280', font: { size: 11 }, callback: v => 'R$' + (v/1000).toFixed(1) + 'k' }, grid: { color: 'rgba(255,255,255,0.04)' } }, y: { ticks: { color: '#9ca3af', font: { size: 12 } }, grid: { display: false } } } }
+  });
+}
+
+function renderFuncionario(data) {
+  const map = {};
+  data.forEach(r => { if (r._func) map[r._func] = (map[r._func] || 0) + r._valor; });
+  const sorted = Object.entries(map).sort((a,b) => b[1]-a[1]).slice(0, 10);
+  if (charts.func) charts.func.destroy();
+  if (!sorted.length) return;
+  charts.func = new Chart(document.getElementById('chart-func'), {
+    type: 'bar',
+    data: { labels: sorted.map(s => s[0]), datasets: [{ data: sorted.map(s => +s[1].toFixed(2)), backgroundColor: 'rgba(20,184,166,0.7)', borderRadius: 4 }] },
+    options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+      scales: { x: { ticks: { color: '#6b7280', font: { size: 11 }, callback: v => 'R$' + (v/1000).toFixed(1) + 'k' }, grid: { color: 'rgba(255,255,255,0.04)' } }, y: { ticks: { color: '#9ca3af', font: { size: 12 } }, grid: { display: false } } } }
+  });
+}
+
+function renderSemRelFunc(data) {
+  const metric = document.getElementById('f-semrel-metric').value;
+  const map = {};
+  data.forEach(r => {
+    if (!r._func || r._extra) return;
+    if (!map[r._func]) map[r._func] = { count: 0, valor: 0 };
+    if (!r._rel) {
+      map[r._func].count++;
+      map[r._func].valor += r._valor;
+    }
+  });
+  
+  const sorted = Object.entries(map)
+    .filter(e => e[1].count > 0)
+    .sort((a, b) => metric === 'valor' ? b[1].valor - a[1].valor : b[1].count - a[1].count)
+    .slice(0, 15);
+
+  if (charts.semrelFunc) charts.semrelFunc.destroy();
+  const wrap = document.getElementById('chart-semrel-wrap');
+  
+  if (!sorted.length) { 
+    wrap.innerHTML = '<div class="empty">Nenhuma compra sem relatório no período</div>'; 
+    return; 
+  }
+  
+  wrap.innerHTML = '<canvas id="chart-semrel-func" role="img" aria-label="Compras sem relatório por funcionário">Compras sem relatório por funcionário</canvas>';
+  wrap.style.height = Math.max(160, sorted.length * 34 + 40) + 'px';
+  
+  charts.semrelFunc = new Chart(document.getElementById('chart-semrel-func'), {
+    type: 'bar',
+    data: { 
+      labels: sorted.map(s => s[0]), 
+      datasets: [{ 
+        label: metric === 'valor' ? 'Valor pendente' : 'Compras sem relatório', 
+        data: sorted.map(s => metric === 'valor' ? s[1].valor : s[1].count),
+        backgroundColor: sorted.map(s => s[1].count >= 5 ? 'rgba(239,68,68,0.75)' : s[1].count >= 2 ? 'rgba(245,158,11,0.75)' : 'rgba(79,142,247,0.65)'), 
+        borderRadius: 4 
+      }] 
+    },
+    options: { 
+      indexAxis: 'y', 
+      responsive: true, 
+      maintainAspectRatio: false,
+      plugins: { 
+        legend: { display: false }, 
+        tooltip: { 
+          callbacks: { 
+            label: ctx => { 
+              const d = sorted[ctx.dataIndex][1];
+              return ` ${d.count} compra${d.count !== 1 ? 's' : ''} | Total: ${fmtBRL(d.valor)}`;
+            } 
+          } 
+        } 
+      },
+      scales: { 
+        x: { 
+          ticks: { 
+            color: '#6b7280', 
+            font: { size: 11 }, 
+            callback: function(v) { return metric === 'valor' ? 'R$' + (v/1000).toFixed(1) + 'k' : v; },
+            stepSize: metric === 'qtd' ? 1 : undefined, 
+            precision: metric === 'qtd' ? 0 : undefined 
+          }, 
+          grid: { color: 'rgba(255,255,255,0.04)' } 
+        }, 
+        y: { 
+          ticks: { color: '#9ca3af', font: { size: 12 } }, 
+          grid: { display: false } 
+        } 
+      } 
+    }
+  });
+}
+
+function renderPendingTable(data) {
+  const map = {};
+  data.forEach(r => {
+    if (!r._func) return;
+    if (!map[r._func]) map[r._func] = { total: 0, semRel: 0, prontoNaoEnv: 0, enviados: 0 };
+    map[r._func].total++;
+    if (!r._rel && !r._extra) map[r._func].semRel++;
+    if (r._rel && !r._env && !r._extra) map[r._func].prontoNaoEnv++;
+    if (r._env && !r._extra) map[r._func].enviados++;
+  });
+  const rows = Object.entries(map).sort((a,b) => (b[1].total ? b[1].semRel/b[1].total : 0) - (a[1].total ? a[1].semRel/a[1].total : 0));
+  document.getElementById('pending-tbody').innerHTML = rows.map(([func, d]) => {
+    const pct = d.total ? (d.semRel / d.total * 100) : 0;
+    const color = pct >= 50 ? '#ef4444' : pct >= 20 ? '#f59e0b' : '#10b981';
+    const badgeClass = pct >= 50 ? 'badge-red' : pct >= 20 ? 'badge-amber' : 'badge-green';
+    const status = pct >= 50 ? 'Crítico' : pct >= 20 ? 'Atenção' : 'OK';
+    return `<tr>
+      <td style="font-weight:500">${func}</td>
+      <td style="font-family:var(--mono);color:var(--muted)">${d.total}</td>
+      <td style="font-family:var(--mono);color:#f87171">${d.semRel}</td>
+      <td style="font-family:var(--mono);color:#fbbf24">${d.prontoNaoEnv}</td>
+      <td style="font-family:var(--mono);color:#34d399">${d.enviados}</td>
+      <td><div class="prog-bar-wrap"><div class="prog-bar"><div class="prog-bar-fill" style="width:${pct.toFixed(1)}%;background:${color}"></div></div><span class="prog-pct" style="color:${color}">${pct.toFixed(1)}%</span></div></td>
+      <td><span class="badge ${badgeClass}">${status}</span></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="7" class="empty">Sem dados</td></tr>';
+}
+
+function renderAlertTables(data) {
+  const prontos = data.filter(r => r._rel && !r._env && !r._extra);
+  const semRel  = data.filter(r => !r._rel && !r._extra);
+  const extras  = data.filter(r => r._extra);
+  const toRow = r => `<tr>
+    <td style="font-family:var(--mono);color:var(--muted);font-size:12px;white-space:nowrap">${r._sa || '—'}</td>
+    <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r._itens || ''}">${r._itens || '—'}</td>
+    <td style="font-family:var(--mono);font-size:12px;white-space:nowrap;color:var(--muted)">${fmtData(r._data)}</td>
+    <td style="white-space:nowrap">${r._func || '—'}</td>
+    <td style="color:var(--muted);white-space:nowrap">${r._unidade || '—'}</td>
+    <td style="font-family:var(--mono);white-space:nowrap">${fmtBRL(r._valor)}</td>
+  </tr>`;
+  const empty = '<tr><td colspan="6" class="empty">Nenhum registro</td></tr>';
+  document.getElementById('tbody-prontos').innerHTML = prontos.length ? prontos.map(toRow).join('') : empty;
+  document.getElementById('tbody-semrel').innerHTML  = semRel.length  ? semRel.map(toRow).join('')  : empty;
+  document.getElementById('tbody-extra').innerHTML   = extras.length  ? extras.map(toRow).join('')  : empty;
+}
+</script>
+</body>
+</html>
