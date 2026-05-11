@@ -258,7 +258,7 @@
     <div class="metrics-grid" id="metrics-grid"></div>
 
     <p class="section-title">Pipeline de reembolso</p>
-    <div class="charts-row cols2">
+    <div class="charts-row cols3">
       <div class="chart-card">
         <div class="chart-header">
           <span class="chart-title">Funil: compra → reembolso</span>
@@ -270,6 +270,12 @@
         <div class="chart-header"><span class="chart-title">Gasto mensal × Enviado</span></div>
         <div class="chart-wrap" style="height:200px;">
           <canvas id="chart-temporal" role="img" aria-label="Gráfico de barras de gastos mensais versus valores enviados para reembolso">Gráfico de evolução mensal</canvas>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-header"><span class="chart-title">Valor gasto por área</span></div>
+        <div class="chart-wrap" style="height:200px;">
+          <canvas id="chart-area" role="img" aria-label="Gráfico de colunas de valor gasto por área Norte e Sul">Valor gasto por área</canvas>
         </div>
       </div>
     </div>
@@ -337,6 +343,15 @@
     <p class="section-title">Alertas e compras pendentes</p>
     <div class="charts-row cols2">
       <div class="chart-card">
+        <div class="chart-header"><span class="chart-title">Enviados para reembolso</span></div>
+        <div class="scroll-table" style="max-height:260px;">
+          <table class="pending-table">
+            <thead><tr><th>SA</th><th>Itens</th><th>Data</th><th>Funcionário</th><th>Unidade</th><th>Valor</th></tr></thead>
+            <tbody id="tbody-enviados"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="chart-card">
         <div class="chart-header"><span class="chart-title">Prontos, não enviados</span></div>
         <div class="scroll-table" style="max-height:260px;">
           <table class="pending-table">
@@ -345,6 +360,9 @@
           </table>
         </div>
       </div>
+    </div>
+
+    <div class="charts-row cols2" style="margin-top:0;">
       <div class="chart-card">
         <div class="chart-header"><span class="chart-title">Serviços extra (sem reembolso)</span></div>
         <div class="scroll-table" style="max-height:260px;">
@@ -354,9 +372,6 @@
           </table>
         </div>
       </div>
-    </div>
-
-    <div class="charts-row" style="margin-top:0;">
       <div class="chart-card">
         <div class="chart-header"><span class="chart-title">Sem relatório ainda</span></div>
         <div class="scroll-table" style="max-height:260px;">
@@ -606,11 +621,96 @@ function render() {
   renderMetrics(data);
   renderFunnel(data);
   renderTemporal(data);
+  renderArea(data);
   renderUnidade(data);
   renderFuncionario(data);
   renderSemRelFunc(data);
   renderPendingTable(data);
   renderAlertTables(data);
+}
+
+// ── LISTAS DE UNIDADES POR ÁREA ───────────────────────────────────────────────
+const UNIDADES_SUL = new Set([
+  'Afogados','Arcoverde','Barão De Nazaré','Barra De Jangada','Boa Viagem','Boa Vista',
+  'Bom Conselho','Cabo','Candeias','Candelária','Caruaru','Casa Amarela','Catende',
+  'Cavaleiro','Curado','Escada','Garanhuns','Gravatá','Ibura','Imbiribeira','Jaboatão',
+  'Jangadeiro','Jd. Coqueiral','Jd. Dos Pinheiros','Massangana','Jd. São Paulo',
+  'Lagoa Encantada','Macaxeira','Massaranduba','Mauricio De Nassau','Moreno','Muribeca',
+  'Palmares','Pesqueira','Piedade','Ponte Dos Carvalhos','Prazeres','Rio Jordão',
+  'São José','Setubal','Tamandaré','Vitória'
+].map(n => n.toLowerCase()));
+
+const UNIDADES_NORTE = new Set([
+  'Abreu E Lima','Água Fria','Águas Compridas','Araripina','Barbalha','Bom Pastor',
+  'Camaragibe','Carpina','Crato','Goiana','Icó','Igarassú','Iguatu','Instituto Norte',
+  'Janga','Jd. Atlântico','Jd. Brasil','Juazeiro','Limoeiro','Madalena','Olinda',
+  'Ouro Preto','Paulista','Soledade','Rio Doce','Salgueiro','San Martin','São Lourenço',
+  'Timbaúba','Torreão','Trindade','Várzea'
+].map(n => n.toLowerCase()));
+
+function getAreaFromUnidade(unidade) {
+  const key = unidade.toLowerCase();
+  if (UNIDADES_SUL.has(key))   return 'Sul';
+  if (UNIDADES_NORTE.has(key)) return 'Norte';
+  return 'Não identificada';
+}
+
+// ── GRÁFICO: VALOR GASTO POR ÁREA ────────────────────────────────────────────
+function renderArea(data) {
+  const totals = { Norte: 0, Sul: 0, 'Não identificada': 0 };
+  data.forEach(r => {
+    const area = getAreaFromUnidade(r._unidade || '');
+    totals[area] += r._valor;
+  });
+
+  if (charts.area) charts.area.destroy();
+
+  const labels = ['Norte', 'Sul'];
+  const values = [totals['Norte'], totals['Sul']];
+  const naoId  = totals['Não identificada'];
+
+  charts.area = new Chart(document.getElementById('chart-area'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Valor gasto',
+        data: values,
+        backgroundColor: ['rgba(79,142,247,0.75)', 'rgba(20,184,166,0.75)'],
+        borderRadius: 6,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => ' ' + fmtBRL(ctx.raw),
+            afterBody: () => naoId > 0 ? [`Não identificada: ${fmtBRL(naoId)}`] : []
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#9ca3af', font: { size: 13, weight: '500' } }, grid: { display: false } },
+        y: { ticks: { color: '#6b7280', font: { size: 11 }, callback: v => 'R$' + (v/1000).toFixed(0) + 'k' }, grid: { color: 'rgba(255,255,255,0.04)' } }
+      }
+    }
+  });
+
+  // Rodapé com não identificadas, se houver
+  const canvasParent = document.getElementById('chart-area').parentElement;
+  const existingNote = canvasParent.querySelector('.area-note');
+  if (existingNote) existingNote.remove();
+  if (naoId > 0) {
+    const note = document.createElement('div');
+    note.className = 'area-note';
+    note.style.cssText = 'font-size:11px;color:var(--muted);margin-top:6px;text-align:center;';
+    note.textContent = `⚠ ${fmtBRL(naoId)} em unidades não mapeadas`;
+    canvasParent.appendChild(note);
+  }
 }
 
 // ── METRICS: 5 cards ──────────────────────────────────────────────────────────
@@ -655,15 +755,17 @@ function renderMetrics(data) {
 
 function renderFunnel(data) {
   const total    = data.length;
+  const semRel   = data.filter(r => !r._rel && !r._extra).length;
   const comRel   = data.filter(r => r._rel).length;
   const enviados = data.filter(r => r._env && !r._extra).length;
   const extras   = data.filter(r => r._extra).length;
   document.getElementById('funil-total').textContent = total + ' Compras no período';
   const steps = [
     { label: 'Total de Compras',   n: total,    pct: 100,                             color: '#378add' },
-    { label: 'Relatório feito',    n: comRel,   pct: total ? comRel/total*100 : 0,   color: '#4f8ef7' },
-    { label: 'Enviados',           n: enviados, pct: total ? enviados/total*100 : 0, color: '#10b981' },
-    { label: 'EXTRA (sem reimb.)', n: extras,   pct: total ? extras/total*100 : 0,   color: '#ef4444' },
+    { label: 'Sem relatório',      n: semRel,   pct: total ? semRel/total*100 : 0,    color: '#a78bfa' },
+    { label: 'Relatório feito',    n: comRel,   pct: total ? comRel/total*100 : 0,    color: '#4f8ef7' },
+    { label: 'Enviados',           n: enviados, pct: total ? enviados/total*100 : 0,  color: '#10b981' },
+    { label: 'EXTRA (sem reimb.)', n: extras,   pct: total ? extras/total*100 : 0,    color: '#ef4444' },
   ];
   document.getElementById('funnel-chart').innerHTML = steps.map(s => `
     <div class="funnel-row">
@@ -833,9 +935,10 @@ function renderPendingTable(data) {
 }
 
 function renderAlertTables(data) {
-  const prontos = data.filter(r => r._rel && !r._env && !r._extra);
-  const semRel  = data.filter(r => !r._rel && !r._extra);
-  const extras  = data.filter(r => r._extra);
+  const enviados = data.filter(r => r._env && !r._extra);
+  const prontos  = data.filter(r => r._rel && !r._env && !r._extra);
+  const extras   = data.filter(r => r._extra);
+  const semRel   = data.filter(r => !r._rel && !r._extra);
   const toRow = r => `<tr>
     <td style="font-family:var(--mono);color:var(--muted);font-size:12px;white-space:nowrap">${r._sa || '—'}</td>
     <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r._itens || ''}">${r._itens || '—'}</td>
@@ -845,9 +948,10 @@ function renderAlertTables(data) {
     <td style="font-family:var(--mono);white-space:nowrap">${fmtBRL(r._valor)}</td>
   </tr>`;
   const empty = '<tr><td colspan="6" class="empty">Nenhum registro</td></tr>';
-  document.getElementById('tbody-prontos').innerHTML = prontos.length ? prontos.map(toRow).join('') : empty;
-  document.getElementById('tbody-semrel').innerHTML  = semRel.length  ? semRel.map(toRow).join('')  : empty;
-  document.getElementById('tbody-extra').innerHTML   = extras.length  ? extras.map(toRow).join('')  : empty;
+  document.getElementById('tbody-enviados').innerHTML = enviados.length ? enviados.map(toRow).join('') : empty;
+  document.getElementById('tbody-prontos').innerHTML  = prontos.length  ? prontos.map(toRow).join('')  : empty;
+  document.getElementById('tbody-extra').innerHTML    = extras.length   ? extras.map(toRow).join('')   : empty;
+  document.getElementById('tbody-semrel').innerHTML   = semRel.length   ? semRel.map(toRow).join('')   : empty;
 }
 </script>
 </body>
